@@ -1,0 +1,19 @@
+{
+  "name": "openlayers-prebuilt",
+  "version": "3.12.1",
+  "description": "Prebuilt OpenLayers 3",
+  "main": "dist/ol.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/claycephas/openlayers-prebuilt.git"
+  },
+  "author": "",
+  "license": "BSD-2-Clause",
+  "bugs": {
+    "url": "https://github.com/claycephas/openlayers-prebuilt/issues"
+  },
+  "homepage": "https://github.com/claycephas/openlayers-prebuilt#readme"
+}
