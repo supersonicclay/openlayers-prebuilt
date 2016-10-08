@@ -1,6 +1,6 @@
 {
   "name": "openlayers-prebuilt",
-  "version": "3.12.1",
+  "version": "3.14.2",
   "description": "Prebuilt OpenLayers 3",
   "main": "dist/ol.js",
   "scripts": {
