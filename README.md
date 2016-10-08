@@ -22,7 +22,9 @@ To update with a specific version of openlayers:
 npm i openlayers@VERSION
 rm -rf dist/
 cp -r node_modules/openlayers/dist/ .
-
-
+git commit -am "Update to version VERSION"
+npm version VERSION
+git push --tags
+npm publishs
 ```
 
