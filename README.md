@@ -15,3 +15,14 @@ The only reason this package exists is to provide a smaller npm dependency list 
 - [https://github.com/openlayers/ol3/issues/4141](https://github.com/openlayers/ol3/issues/4141)
 - [https://github.com/openlayers/ol3/issues/4128](https://github.com/openlayers/ol3/issues/4128)
 
+## Contributing
+
+To update with a specific version of openlayers:
+```
+npm i openlayers@VERSION
+rm -rf dist/
+cp -r node_modules/openlayers/dist/ .
+
+
+```
+
