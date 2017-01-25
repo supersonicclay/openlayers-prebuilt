@@ -21,8 +21,9 @@ To update with a specific version of openlayers:
 ```
 npm i openlayers@VERSION
 rm -rf dist/
-cp -r node_modules/openlayers/dist/ .
-
-
+cp -r node_modules/openlayers/dist/ ./dist/
+git commit -am "Updated to VERSION"
+npm version VERSION
+npm publish
 ```
 
