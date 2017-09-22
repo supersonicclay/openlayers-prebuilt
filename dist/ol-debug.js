@@ -1,6 +1,6 @@
 // OpenLayers. See https://openlayers.org/
 // License: https://raw.githubusercontent.com/openlayers/openlayers/master/LICENSE.md
-// Version: v4.3.1
+// Version: v4.3.2
 ;(function (root, factory) {
   if (typeof exports === "object") {
     module.exports = factory();
@@ -4931,6 +4931,7 @@ ol.Sphere.DEFAULT_RADIUS = 6371008.8;
  *     calculation.  By default, geometries are assumed to be in 'EPSG:3857'.
  *     You can change this by providing a `projection` option.
  * @return {number} The spherical length (in meters).
+ * @api
  */
 ol.Sphere.getLength = function(geometry, opt_options) {
   var options = opt_options || {};
@@ -5026,6 +5027,7 @@ ol.Sphere.getDistance_ = function(c1, c2, radius) {
  *     calculation.  By default, geometries are assumed to be in 'EPSG:3857'.
  *     You can change this by providing a `projection` option.
  * @return {number} The spherical area (in square meters).
+ * @api
  */
 ol.Sphere.getArea = function(geometry, opt_options) {
   var options = opt_options || {};
@@ -81583,6 +81585,16 @@ goog.exportProperty(
     'haversineDistance',
     ol.Sphere.prototype.haversineDistance);
 
+goog.exportSymbol(
+    'ol.Sphere.getLength',
+    ol.Sphere.getLength,
+    OPENLAYERS);
+
+goog.exportSymbol(
+    'ol.Sphere.getArea',
+    ol.Sphere.getArea,
+    OPENLAYERS);
+
 goog.exportProperty(
     ol.Tile.prototype,
     'getTileCoord',
@@ -93887,7 +93899,7 @@ goog.exportProperty(
     ol.control.ZoomToExtent.prototype,
     'un',
     ol.control.ZoomToExtent.prototype.un);
-ol.VERSION = 'v4.3.1';
+ol.VERSION = 'v4.3.2';
 OPENLAYERS.ol = ol;
 
   return OPENLAYERS.ol;
