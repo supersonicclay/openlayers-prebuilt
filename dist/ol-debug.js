@@ -1,6 +1,6 @@
 // OpenLayers. See https://openlayers.org/
 // License: https://raw.githubusercontent.com/openlayers/openlayers/master/LICENSE.md
-// Version: v4.3.0
+// Version: v4.3.1
 ;(function (root, factory) {
   if (typeof exports === "object") {
     module.exports = factory();
@@ -17314,7 +17314,14 @@ ol.View.prototype.animate = function(var_args) {
     }
 
     animation.callback = callback;
-    start += animation.duration;
+
+    // check if animation is a no-op
+    if (ol.View.isNoopAnimation(animation)) {
+      animation.complete = true;
+      // we still push it onto the series for callback handling
+    } else {
+      start += animation.duration;
+    }
     series.push(animation);
   }
   this.animations_.push(series);
@@ -18169,6 +18176,27 @@ ol.View.createRotationConstraint_ = function(options) {
   } else {
     return ol.RotationConstraint.disable;
   }
+};
+
+
+/**
+ * Determine if an animation involves no view change.
+ * @param {ol.ViewAnimation} animation The animation.
+ * @return {boolean} The animation involves no view change.
+ */
+ol.View.isNoopAnimation = function(animation) {
+  if (animation.sourceCenter && animation.targetCenter) {
+    if (!ol.coordinate.equals(animation.sourceCenter, animation.targetCenter)) {
+      return false;
+    }
+  }
+  if (animation.sourceResolution !== animation.targetResolution) {
+    return false;
+  }
+  if (animation.sourceRotation !== animation.targetRotation) {
+    return false;
+  }
+  return true;
 };
 
 goog.provide('ol.Kinetic');
@@ -28504,7 +28532,8 @@ if (ol.ENABLE_WEBGL) {
     var outerRing = new ol.structs.LinkedList();
     var rtree = new ol.structs.RBush();
     // Initialize the outer ring
-    var maxX = this.processFlatCoordinates_(flatCoordinates, stride, outerRing, rtree, true);
+    this.processFlatCoordinates_(flatCoordinates, stride, outerRing, rtree, true);
+    var maxCoords = this.getMaxCoords_(outerRing);
 
     // Eliminate holes, if there are any
     if (holeFlatCoordinates.length) {
@@ -28513,15 +28542,18 @@ if (ol.ENABLE_WEBGL) {
       for (i = 0, ii = holeFlatCoordinates.length; i < ii; ++i) {
         var holeList = {
           list: new ol.structs.LinkedList(),
-          maxX: undefined,
+          maxCoords: undefined,
           rtree: new ol.structs.RBush()
         };
         holeLists.push(holeList);
-        holeList.maxX = this.processFlatCoordinates_(holeFlatCoordinates[i],
+        this.processFlatCoordinates_(holeFlatCoordinates[i],
             stride, holeList.list, holeList.rtree, false);
+        this.classifyPoints_(holeList.list, holeList.rtree, true);
+        holeList.maxCoords = this.getMaxCoords_(holeList.list);
       }
       holeLists.sort(function(a, b) {
-        return b.maxX[0] === a.maxX[0] ? a.maxX[1] - b.maxX[1] : b.maxX[0] - a.maxX[0];
+        return b.maxCoords[0] === a.maxCoords[0] ?
+          a.maxCoords[1] - b.maxCoords[1] : b.maxCoords[0] - a.maxCoords[0];
       });
       for (i = 0; i < holeLists.length; ++i) {
         var currList = holeLists[i].list;
@@ -28529,6 +28561,7 @@ if (ol.ENABLE_WEBGL) {
         var currItem = start;
         var intersection;
         do {
+          //TODO: Triangulate holes when they intersect the outer ring.
           if (this.getIntersections_(currItem, rtree).length) {
             intersection = true;
             break;
@@ -28536,8 +28569,7 @@ if (ol.ENABLE_WEBGL) {
           currItem = currList.nextItem();
         } while (start !== currItem);
         if (!intersection) {
-          this.classifyPoints_(currList, holeLists[i].rtree, true);
-          if (this.bridgeHole_(currList, holeLists[i].maxX[0], outerRing, maxX[0], rtree)) {
+          if (this.bridgeHole_(currList, holeLists[i].maxCoords[0], outerRing, maxCoords[0], rtree)) {
             rtree.concat(holeLists[i].rtree);
             this.classifyPoints_(outerRing, rtree, false);
           }
@@ -28558,13 +28590,12 @@ if (ol.ENABLE_WEBGL) {
    * @param {ol.structs.LinkedList} list Linked list.
    * @param {ol.structs.RBush} rtree R-Tree of the polygon.
    * @param {boolean} clockwise Coordinate order should be clockwise.
-   * @return {Array.<number>} X and Y coords of maximum X value.
    */
   ol.render.webgl.PolygonReplay.prototype.processFlatCoordinates_ = function(
       flatCoordinates, stride, list, rtree, clockwise) {
     var isClockwise = ol.geom.flat.orient.linearRingIsClockwise(flatCoordinates,
         0, flatCoordinates.length, stride);
-    var i, ii, maxXX, maxXY;
+    var i, ii;
     var n = this.vertices.length / 2;
     /** @type {ol.WebglPolygonVertex} */
     var start;
@@ -28577,17 +28608,11 @@ if (ol.ENABLE_WEBGL) {
     if (clockwise === isClockwise) {
       start = this.createPoint_(flatCoordinates[0], flatCoordinates[1], n++);
       p0 = start;
-      maxXX = flatCoordinates[0];
-      maxXY = flatCoordinates[1];
       for (i = stride, ii = flatCoordinates.length; i < ii; i += stride) {
         p1 = this.createPoint_(flatCoordinates[i], flatCoordinates[i + 1], n++);
         segments.push(this.insertItem_(p0, p1, list));
         extents.push([Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.max(p0.x, p1.x),
           Math.max(p0.y, p1.y)]);
-        if (flatCoordinates[i] > maxXX) {
-          maxXX = flatCoordinates[i];
-          maxXY = flatCoordinates[i + 1];
-        }
         p0 = p1;
       }
       segments.push(this.insertItem_(p1, start, list));
@@ -28597,17 +28622,11 @@ if (ol.ENABLE_WEBGL) {
       var end = flatCoordinates.length - stride;
       start = this.createPoint_(flatCoordinates[end], flatCoordinates[end + 1], n++);
       p0 = start;
-      maxXX = flatCoordinates[end];
-      maxXY = flatCoordinates[end + 1];
       for (i = end - stride, ii = 0; i >= ii; i -= stride) {
         p1 = this.createPoint_(flatCoordinates[i], flatCoordinates[i + 1], n++);
         segments.push(this.insertItem_(p0, p1, list));
         extents.push([Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.max(p0.x, p1.x),
           Math.max(p0.y, p1.y)]);
-        if (flatCoordinates[i] > maxXX) {
-          maxXX = flatCoordinates[i];
-          maxXY = flatCoordinates[i + 1];
-        }
         p0 = p1;
       }
       segments.push(this.insertItem_(p1, start, list));
@@ -28615,8 +28634,28 @@ if (ol.ENABLE_WEBGL) {
         Math.max(p0.y, p1.y)]);
     }
     rtree.load(extents, segments);
+  };
 
-    return [maxXX, maxXY];
+
+  /**
+   * Returns the rightmost coordinates of a polygon on the X axis.
+   * @private
+   * @param {ol.structs.LinkedList} list Polygons ring.
+   * @return {Array.<number>} Max X coordinates.
+   */
+  ol.render.webgl.PolygonReplay.prototype.getMaxCoords_ = function(list) {
+    var start = list.firstItem();
+    var seg = start;
+    var maxCoords = [seg.p0.x, seg.p0.y];
+
+    do {
+      seg = list.nextItem();
+      if (seg.p0.x > maxCoords[0]) {
+        maxCoords = [seg.p0.x, seg.p0.y];
+      }
+    } while (seg !== start);
+
+    return maxCoords;
   };
 
 
@@ -28750,7 +28789,7 @@ if (ol.ENABLE_WEBGL) {
           if (!this.classifyPoints_(list, rtree, ccw)) {
             // Due to the behavior of OL's PIP algorithm, the ear clipping cannot
             // introduce touching segments. However, the original data may have some.
-            if (!this.resolveLocalSelfIntersections_(list, rtree, true)) {
+            if (!this.resolveSelfIntersections_(list, rtree, true)) {
               break;
             }
           }
@@ -28760,7 +28799,7 @@ if (ol.ENABLE_WEBGL) {
           // We ran out of ears, try to reclassify.
           if (!this.classifyPoints_(list, rtree, ccw)) {
             // We have a bad polygon, try to resolve local self-intersections.
-            if (!this.resolveLocalSelfIntersections_(list, rtree)) {
+            if (!this.resolveSelfIntersections_(list, rtree)) {
               simple = this.isSimple_(list, rtree);
               if (!simple) {
                 // We have a really bad polygon, try more time consuming methods.
@@ -28807,10 +28846,15 @@ if (ol.ENABLE_WEBGL) {
       p2 = s2.p1;
       if (p1.reflex === false) {
         // We might have a valid ear
-        var diagonalIsInside = ccw ? this.diagonalIsInside_(s3.p1, p2, p1, p0,
-            s0.p0) : this.diagonalIsInside_(s0.p0, p0, p1, p2, s3.p1);
+        var variableCriterion;
+        if (simple) {
+          variableCriterion = this.getPointsInTriangle_(p0, p1, p2, rtree, true).length === 0;
+        } else {
+          variableCriterion = ccw ? this.diagonalIsInside_(s3.p1, p2, p1, p0,
+              s0.p0) : this.diagonalIsInside_(s0.p0, p0, p1, p2, s3.p1);
+        }
         if ((simple || this.getIntersections_({p0: p0, p1: p2}, rtree).length === 0) &&
-            diagonalIsInside && this.getPointsInTriangle_(p0, p1, p2, rtree, true).length === 0) {
+            variableCriterion) {
           //The diagonal is completely inside the polygon
           if (simple || p0.reflex === false || p2.reflex === false ||
               ol.geom.flat.orient.linearRingIsClockwise([s0.p0.x, s0.p0.y, p0.x,
@@ -28845,7 +28889,7 @@ if (ol.ENABLE_WEBGL) {
    * @param {boolean=} opt_touch Resolve touching segments.
    * @return {boolean} There were resolved intersections.
   */
-  ol.render.webgl.PolygonReplay.prototype.resolveLocalSelfIntersections_ = function(
+  ol.render.webgl.PolygonReplay.prototype.resolveSelfIntersections_ = function(
       list, rtree, opt_touch) {
     var start = list.firstItem();
     list.nextItem();
@@ -30015,8 +30059,8 @@ if (ol.ENABLE_WEBGL) {
       var lines = this.text_.split('\n');
       var textSize = this.getTextSize_(lines);
       var i, ii, j, jj, currX, currY, charArr, charInfo;
-      var anchorX = Math.round(textSize[0] * this.textAlign_ + this.offsetX_);
-      var anchorY = Math.round(textSize[1] * this.textBaseline_ + this.offsetY_);
+      var anchorX = Math.round(textSize[0] * this.textAlign_ - this.offsetX_);
+      var anchorY = Math.round(textSize[1] * this.textBaseline_ - this.offsetY_);
       var lineWidth = (this.state_.lineWidth / 2) * this.state_.scale;
 
       for (i = 0, ii = lines.length; i < ii; ++i) {
@@ -30746,8 +30790,42 @@ if (ol.ENABLE_WEBGL) {
      */
     this.strokeStyle_ = null;
 
+    /**
+     * @private
+     * @type {ol.style.Text}
+     */
+    this.textStyle_ = null;
+
   };
   ol.inherits(ol.render.webgl.Immediate, ol.render.VectorContext);
+
+
+  /**
+   * @param {ol.render.webgl.ReplayGroup} replayGroup Replay group.
+   * @param {Array.<number>} flatCoordinates Flat coordinates.
+   * @param {number} offset Offset.
+   * @param {number} end End.
+   * @param {number} stride Stride.
+   * @private
+   */
+  ol.render.webgl.Immediate.prototype.drawText_ = function(replayGroup,
+      flatCoordinates, offset, end, stride) {
+    var context = this.context_;
+    var replay = /** @type {ol.render.webgl.TextReplay} */ (
+      replayGroup.getReplay(0, ol.render.ReplayType.TEXT));
+    replay.setTextStyle(this.textStyle_);
+    replay.drawText(flatCoordinates, offset, end, stride, null, null);
+    replay.finish(context);
+    // default colors
+    var opacity = 1;
+    var skippedFeatures = {};
+    var featureCallback;
+    var oneByOne = false;
+    replay.replay(this.context_, this.center_, this.resolution_, this.rotation_,
+        this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
+        oneByOne);
+    replay.getDeleteResourcesFunction(context)();
+  };
 
 
   /**
@@ -30761,6 +30839,7 @@ if (ol.ENABLE_WEBGL) {
   ol.render.webgl.Immediate.prototype.setStyle = function(style) {
     this.setFillStrokeStyle(style.getFill(), style.getStroke());
     this.setImageStyle(style.getImage());
+    this.setTextStyle(style.getText());
   };
 
 
@@ -30852,6 +30931,12 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      var flatCoordinates = geometry.getFlatCoordinates();
+      var stride = geometry.getStride();
+      this.drawText_(replayGroup, flatCoordinates, 0, flatCoordinates.length, stride);
+    }
   };
 
 
@@ -30874,6 +30959,12 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      var flatCoordinates = geometry.getFlatCoordinates();
+      var stride = geometry.getStride();
+      this.drawText_(replayGroup, flatCoordinates, 0, flatCoordinates.length, stride);
+    }
   };
 
 
@@ -30896,6 +30987,11 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      var flatMidpoint = geometry.getFlatMidpoint();
+      this.drawText_(replayGroup, flatMidpoint, 0, 2, 2);
+    }
   };
 
 
@@ -30918,6 +31014,11 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      var flatMidpoints = geometry.getFlatMidpoints();
+      this.drawText_(replayGroup, flatMidpoints, 0, flatMidpoints.length, 2);
+    }
   };
 
 
@@ -30940,6 +31041,11 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      var flatInteriorPoint = geometry.getFlatInteriorPoint();
+      this.drawText_(replayGroup, flatInteriorPoint, 0, 2, 2);
+    }
   };
 
 
@@ -30962,6 +31068,11 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      var flatInteriorPoints = geometry.getFlatInteriorPoints();
+      this.drawText_(replayGroup, flatInteriorPoints, 0, flatInteriorPoints.length, 2);
+    }
   };
 
 
@@ -30984,6 +31095,10 @@ if (ol.ENABLE_WEBGL) {
         this.size_, this.pixelRatio_, opacity, skippedFeatures, featureCallback,
         oneByOne);
     replay.getDeleteResourcesFunction(context)();
+
+    if (this.textStyle_) {
+      this.drawText_(replayGroup, geometry.getCenter(), 0, 2, 2);
+    }
   };
 
 
@@ -31001,6 +31116,14 @@ if (ol.ENABLE_WEBGL) {
   ol.render.webgl.Immediate.prototype.setFillStrokeStyle = function(fillStyle, strokeStyle) {
     this.fillStyle_ = fillStyle;
     this.strokeStyle_ = strokeStyle;
+  };
+
+
+  /**
+   * @inheritDoc
+   */
+  ol.render.webgl.Immediate.prototype.setTextStyle = function(textStyle) {
+    this.textStyle_ = textStyle;
   };
 
 }
@@ -72912,7 +73035,7 @@ ol.renderer.canvas.VectorTileLayer.prototype.forEachFeatureAtCoordinate = functi
   var sourceTileGrid = source.getTileGrid();
   var bufferedExtent, found, tileSpaceCoordinate;
   var i, ii, origin, replayGroup;
-  var tile, tileCoord, tileExtent, tilePixelRatio, tileResolution;
+  var tile, tileCoord, tileExtent, tilePixelRatio, tileRenderResolution;
   for (i = 0, ii = renderedTiles.length; i < ii; ++i) {
     tile = renderedTiles[i];
     tileCoord = tile.tileCoord;
@@ -72928,12 +73051,14 @@ ol.renderer.canvas.VectorTileLayer.prototype.forEachFeatureAtCoordinate = functi
         var sourceTileExtent = sourceTileGrid.getTileCoordExtent(sourceTileCoord, this.tmpExtent);
         origin = ol.extent.getTopLeft(sourceTileExtent);
         tilePixelRatio = this.getTilePixelRatio_(source, sourceTile);
-        tileResolution = sourceTileGrid.getResolution(sourceTileCoord[0]) / tilePixelRatio;
+        var sourceTileResolution = sourceTileGrid.getResolution(sourceTileCoord[0]);
+        tileRenderResolution = sourceTileResolution / tilePixelRatio;
         tileSpaceCoordinate = [
-          (coordinate[0] - origin[0]) / tileResolution,
-          (origin[1] - coordinate[1]) / tileResolution
+          (coordinate[0] - origin[0]) / tileRenderResolution,
+          (origin[1] - coordinate[1]) / tileRenderResolution
         ];
-        resolution = tilePixelRatio;
+        var upscaling = tileGrid.getResolution(tileCoord[0]) / sourceTileResolution;
+        resolution = tilePixelRatio * upscaling;
       } else {
         tileSpaceCoordinate = coordinate;
       }
@@ -93762,7 +93887,7 @@ goog.exportProperty(
     ol.control.ZoomToExtent.prototype,
     'un',
     ol.control.ZoomToExtent.prototype.un);
-ol.VERSION = 'v4.3.0';
+ol.VERSION = 'v4.3.1';
 OPENLAYERS.ol = ol;
 
   return OPENLAYERS.ol;
