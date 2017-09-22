@@ -1,6 +1,6 @@
 // OpenLayers. See https://openlayers.org/
 // License: https://raw.githubusercontent.com/openlayers/openlayers/master/LICENSE.md
-// Version: v4.0.0
+// Version: v4.0.1
 ;(function (root, factory) {
   if (typeof exports === "object") {
     module.exports = factory();
@@ -18378,6 +18378,11 @@ ol.interaction.DragPan = function(opt_options) {
   this.lastCentroid = null;
 
   /**
+   * @type {number}
+   */
+  this.lastPointersCount_;
+
+  /**
    * @private
    * @type {ol.EventsConditionType}
    */
@@ -18400,25 +18405,33 @@ ol.inherits(ol.interaction.DragPan, ol.interaction.Pointer);
  * @private
  */
 ol.interaction.DragPan.handleDragEvent_ = function(mapBrowserEvent) {
+  var targetPointers = this.targetPointers;
   var centroid =
-      ol.interaction.Pointer.centroid(this.targetPointers);
-  if (this.kinetic_) {
-    this.kinetic_.update(centroid[0], centroid[1]);
-  }
-  if (this.lastCentroid) {
-    var deltaX = this.lastCentroid[0] - centroid[0];
-    var deltaY = centroid[1] - this.lastCentroid[1];
-    var map = mapBrowserEvent.map;
-    var view = map.getView();
-    var viewState = view.getState();
-    var center = [deltaX, deltaY];
-    ol.coordinate.scale(center, viewState.resolution);
-    ol.coordinate.rotate(center, viewState.rotation);
-    ol.coordinate.add(center, viewState.center);
-    center = view.constrainCenter(center);
-    view.setCenter(center);
+      ol.interaction.Pointer.centroid(targetPointers);
+  if (targetPointers.length == this.lastPointersCount_) {
+    if (this.kinetic_) {
+      this.kinetic_.update(centroid[0], centroid[1]);
+    }
+    if (this.lastCentroid) {
+      var deltaX = this.lastCentroid[0] - centroid[0];
+      var deltaY = centroid[1] - this.lastCentroid[1];
+      var map = mapBrowserEvent.map;
+      var view = map.getView();
+      var viewState = view.getState();
+      var center = [deltaX, deltaY];
+      ol.coordinate.scale(center, viewState.resolution);
+      ol.coordinate.rotate(center, viewState.rotation);
+      ol.coordinate.add(center, viewState.center);
+      center = view.constrainCenter(center);
+      view.setCenter(center);
+    }
+  } else if (this.kinetic_) {
+    // reset so we don't overestimate the kinetic energy after
+    // after one finger down, tiny drag, second finger down
+    this.kinetic_.begin();
   }
   this.lastCentroid = centroid;
+  this.lastPointersCount_ = targetPointers.length;
 };
 
 
@@ -91060,7 +91073,7 @@ goog.exportProperty(
     ol.control.ZoomToExtent.prototype,
     'un',
     ol.control.ZoomToExtent.prototype.un);
-ol.VERSION = 'v4.0.0';
+ol.VERSION = 'v4.0.1';
 OPENLAYERS.ol = ol;
 
   return OPENLAYERS.ol;
