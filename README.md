@@ -1,3 +1,16 @@
+
+-----------------
+# DEPRECATED
+-----------------
+
+## There is now an [ol package](https://www.npmjs.com/package/ol) that makes this `openlayers-prebuilt` package no longer necessary. Thanks OpenLayers team!
+
+
+
+-----------------
+-----------------
+
+
 # Pre-built OpenLayers 3
 
 This is simply a pre-built copy of the OpenLayers 3 JavaScript with no npm dependencies.
